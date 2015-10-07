@@ -11,6 +11,10 @@
 .tm*
 ~*
 
+nbproject/
+.idea/
+*.iml
+
 /autom4te.cache
 
 /INSTALL

@@ -14,23 +14,28 @@ libatk_wrapper_la_SOURCES = AtkWrapper.c \
                             jawimage.c \
                             jawselection.c \
                             jawvalue.c \
-                            jawtable.c
+                            jawtable.c \
+                            jawtablecell.c
 
-noinst_HEADERS = jawimpl.h \
+noinst_HEADERS = AtkWrapper.h \
+                 jawimpl.h \
                  jawobject.h \
                  jawhyperlink.h \
                  jawtoplevel.h \
                  jawutil.h
 
 libatk_wrapper_la_CFLAGS = $(JNI_INCLUDES)\
-                           $(JAW_CFLAGS)
+                           $(JAW_CFLAGS) \
+                           $(AM_CFLAGS) \
+                           $(PLATFORM_CFLAGS)
 
 libatk_wrapper_la_CPPFLAGS = $(JNI_INCLUDES)\
-                             $(JAW_CFLAGS)
+                             $(JAW_CFLAGS) \
+                             $(PLATFORM_CFLAGS)
 
 libatk_wrapper_la_LDFLAGS = $(LIB_ATK_WRAPPER_LD_FLAGS) \
                             $(LT_VERSION_INFO) \
-                            -rpath $(libdir) \
+                            $(PLATFORM_LDFLAGS) \
                             $(AM_LDFLAGS)
 
 libatk_wrapper_la_LIBADD = $(JAW_LIBS)

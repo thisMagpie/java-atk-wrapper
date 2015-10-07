@@ -28,6 +28,10 @@
 #include "jawtoplevel.h"
 #include "jawobject.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 static void jaw_impl_class_init (JawImplClass *klass);
 //static void			jaw_impl_init				(JawImpl		*impl);
 static void jaw_impl_dispose(GObject *gobject);
@@ -77,6 +81,10 @@ extern void jaw_table_interface_init (AtkTableIface*);
 extern gpointer jaw_table_data_init (jobject);
 extern void jaw_table_data_finalize (gpointer);
 
+extern void jaw_table_cell_interface_init (AtkTableCellIface*);
+extern gpointer jaw_table_cell_data_init (jobject);
+extern void jaw_table_cell_data_finalize (gpointer);
+
 typedef struct _JawInterfaceInfo {
   void (*finalize) (gpointer);
   gpointer data;
@@ -86,6 +94,7 @@ static gpointer jaw_impl_parent_class = NULL;
 
 static GHashTable *typeTable = NULL;
 static GHashTable *objectTable = NULL;
+static gboolean jaw_debug = FALSE;
 
 static void
 object_table_insert (JNIEnv *jniEnv, jobject ac, JawImpl* jaw_impl)
@@ -97,7 +106,7 @@ object_table_insert (JNIEnv *jniEnv, jobject ac, JawImpl* jaw_impl)
                                           "hashCode",
                                           "()I");
   gint hash_key = (gint)(*jniEnv)->CallIntMethod(jniEnv, ac, jmid);
-  g_hash_table_insert(objectTable, (gpointer)&hash_key, (gpointer)&jaw_impl);
+  g_hash_table_insert(objectTable, GINT_TO_POINTER(hash_key), GINT_TO_POINTER(jaw_impl));
 }
 
 static JawImpl*
@@ -114,7 +123,7 @@ object_table_lookup (JNIEnv *jniEnv, jobject ac)
   if (objectTable==NULL)
     return NULL;
 
-  value = g_hash_table_lookup(objectTable, (gpointer)&hash_key);
+  value = g_hash_table_lookup(objectTable, GINT_TO_POINTER(hash_key));
   return (JawImpl*)value;
 }
 
@@ -129,7 +138,13 @@ object_table_remove(JNIEnv *jniEnv, jobject ac)
                                           "()I" );
   gint hash_key = (gint)(*jniEnv)->CallIntMethod( jniEnv, ac, jmid );
 
-  g_hash_table_remove(objectTable, (gpointer)&hash_key );
+  g_hash_table_remove(objectTable, GINT_TO_POINTER(hash_key));
+}
+
+GHashTable*
+jaw_impl_get_object_hash_table(void)
+{
+  return objectTable;
 }
 
 static void
@@ -229,6 +244,16 @@ aggregate_interface(JNIEnv *jniEnv, JawObject *jaw_obj, guint tflag)
                         (gpointer)INTERFACE_TABLE,
                         (gpointer)info);
   }
+
+  if (tflag & INTERFACE_TABLE_CELL)
+  {
+    JawInterfaceInfo *info = g_new(JawInterfaceInfo, 1);
+    info->data = jaw_table_cell_data_init(ac);
+    info->finalize = jaw_table_cell_data_finalize;
+    g_hash_table_insert(jaw_impl->ifaceTable,
+                        (gpointer)INTERFACE_TABLE_CELL,
+                        (gpointer)info);
+  }
 }
 
 JawImpl*
@@ -263,15 +288,21 @@ jaw_impl_get_instance (JNIEnv *jniEnv, jobject ac)
           aggregate_interface(jniEnv, jaw_obj, tflag);
           atk_object_initialize(ATK_OBJECT(jaw_impl), NULL);
           object_table_insert(jniEnv, global_ac, jaw_impl);
-        } else {
-          g_warning("\n *** jaw_impl_get_instance: jaw_obj == NULL *** \n");
+        } else
+        {
+          if (jaw_debug)
+            g_warning("jaw_impl_get_instance: jaw_obj == NULL");
           return NULL;
         }
-      } else {
-        g_warning("\n *** jaw_impl_get_instance: jaw_impl == NULL *** \n");
+      } else
+      {
+        if (jaw_debug)
+          g_warning("jaw_impl_get_instance: jaw_impl == NULL");
       }
-    } else {
-      g_warning("\n *** jaw_impl_get_instance: global_ac == NULL *** \n");
+    } else
+    {
+      if (jaw_debug)
+        g_warning("jaw_impl_get_instance: global_ac == NULL");
       return NULL;
     }
   }
@@ -286,7 +317,8 @@ jaw_impl_find_instance (JNIEnv *jniEnv, jobject ac)
   jaw_impl = object_table_lookup(jniEnv, ac);
   if (jaw_impl == NULL)
   {
-    g_warning("\n *** jaw_impl_find_instance: jaw_impl == NULL *** \n");
+    if (jaw_debug)
+      g_warning("jaw_impl_find_instance: jaw_impl");
     return NULL;
   }
 
@@ -372,11 +404,18 @@ jaw_impl_get_type (guint tflag)
     NULL
   };
 
+  static const GInterfaceInfo atk_table_cell_info =
+  {
+    (GInterfaceInitFunc) jaw_table_cell_interface_init,
+    (GInterfaceFinalizeFunc) NULL,
+    NULL
+  };
+
   if (typeTable == NULL) {
     typeTable = g_hash_table_new( NULL, NULL );
   }
 
-  type = (GType)g_hash_table_lookup(typeTable, (gpointer)&tflag);
+  type = GPOINTER_TO_GTYPE(g_hash_table_lookup(typeTable, GUINT_TO_POINTER(tflag)));
   if (type == 0) {
     GTypeInfo tinfo = {
       sizeof(JawImplClass),
@@ -423,7 +462,10 @@ jaw_impl_get_type (guint tflag)
     if (tflag & INTERFACE_TABLE)
       g_type_add_interface_static (type, ATK_TYPE_TABLE, &atk_table_info);
 
-    g_hash_table_insert(typeTable, (gpointer)&tflag, (gpointer)type);
+    if (tflag & INTERFACE_TABLE_CELL)
+      g_type_add_interface_static (type, ATK_TYPE_TABLE_CELL, &atk_table_cell_info);
+
+    g_hash_table_insert(typeTable, GINT_TO_POINTER(tflag), GTYPE_TO_POINTER(type));
   }
 
   return type;
@@ -474,19 +516,19 @@ jaw_impl_finalize(GObject *gobject)
   jaw_obj->acc_context = NULL;
 
   /* Interface finalize */
-  GHashTableIter iter;
-  gpointer key;
-  gpointer value;
+  GHashTableIter *iter = NULL;
+  gpointer *key = NULL;
+  gpointer *value = NULL;
 
-  g_hash_table_iter_init(&iter, jaw_impl->ifaceTable);
-  while (g_hash_table_iter_next(&iter, &key, &value))
+  g_hash_table_iter_init(iter, jaw_impl->ifaceTable);
+  while (g_hash_table_iter_next(iter, key, value))
   {
     JawInterfaceInfo *info = (JawInterfaceInfo*)value;
     info->finalize(info->data);
 
     g_free(info);
 
-    g_hash_table_iter_remove(&iter);
+    g_hash_table_iter_remove(iter);
   }
   if (jaw_impl->ifaceTable != NULL)
   {
@@ -505,7 +547,7 @@ jaw_impl_get_interface_data (JawObject *jaw_obj, guint iface)
   if (jaw_impl->ifaceTable == NULL || jaw_impl == NULL)
     return NULL;
 
-  JawInterfaceInfo *info = g_hash_table_lookup(jaw_impl->ifaceTable, (gpointer)&iface);
+  JawInterfaceInfo *info = g_hash_table_lookup(jaw_impl->ifaceTable,GUINT_TO_POINTER(iface));
 
   if (info != NULL)
     return info->data;
@@ -687,6 +729,12 @@ get_atk_relation_type_from_java_key (JNIEnv *jniEnv, jstring jrel_key)
   return ATK_RELATION_NULL;
 }
 
+AtkRelationType
+jaw_impl_get_atk_relation_type(JNIEnv *env, jstring jrel_key)
+{
+  return get_atk_relation_type_from_java_key(env, jrel_key);
+}
+
 static AtkRelationSet*
 jaw_impl_ref_relation_set (AtkObject *atk_obj)
 {
@@ -765,4 +813,8 @@ jaw_impl_ref_relation_set (AtkObject *atk_obj)
 
   return atk_obj->relation_set;
 }
+
+#ifdef __cplusplus
+}
+#endif
 

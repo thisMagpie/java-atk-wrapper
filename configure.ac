@@ -1,8 +1,9 @@
 AC_PREREQ(2.63)
-AC_INIT([java-atk-wrapper],[0.32.92])
+AC_INIT([java-atk-wrapper],[0.33.3],[https://bugzilla.gnome.org/enter_bug.cgi?product=java-atk-wrapper])
+: ${CXXFLAGS=""}
 
 AC_CONFIG_AUX_DIR(config)
-AM_INIT_AUTOMAKE([1.11 -Wall check-news -Wdeprecated-declarations])
+AM_INIT_AUTOMAKE([1.11 -Wall check-news])
 
 AM_SILENT_RULES([yes])
 m4_pattern_allow([AM_PROG_AR])
@@ -16,16 +17,16 @@ m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 #   change to C+1:0:0
 # - If the interface is the same as the previous version, change to C:R+1:A
 
-LIB_ATK_WRAPPER_LT_VERSION=3:21:2
+LIB_ATK_WRAPPER_LT_VERSION=6:0:0
 AC_SUBST(LIB_ATK_WRAPPER_LT_VERSION)
 
 # jni
-
 AC_CONFIG_HEADERS([config.h])
 
 AC_PROG_CC(gcc)
+AC_PROG_CXX
 AC_PROG_INSTALL
-AC_ISC_POSIX
+AC_PATH_XTRA
 
 # Initialize libtool
 LT_PREREQ([2.2.6])
@@ -42,10 +43,8 @@ PKG_CHECK_MODULES(JAW, [
   dbus-1
   glib-2.0 >= 2.32.0
   gthread-2.0
-  gmodule-2.0 >= 2.0.0
   gdk-2.0
   gdk-3.0
-  gconf-2.0
   gobject-2.0
 ])
 AC_SUBST(JAW_LIBS)
@@ -62,11 +61,33 @@ AC_SUBST(LIB_ATK_WRAPPER_LD_FLAGS)
 
 # java wrapper
 
+AM_CONDITIONAL(USER, test `whoami` = "root")
 JAVA_REQUIRED=1.6
 JAVA_ERROR_MESSAGE="Java $JAVA_REQUIRED or later is required to build java-access-bridge"
 
 AC_ARG_VAR([JAVA_HOME],[Java Runtime Environment location])
 AC_ARG_VAR([JDK_SRC],[JDK installation path])
+
+CUR_DIR=`pwd`
+SRC_DIR=`dirname $0`
+
+AC_ARG_WITH([jdk_auto_detect],
+            [AS_HELP_STRING([--with-jdk-auto-detect],
+            [Auto-detection of jdk location])],
+            [],
+            [with_jdk_auto_detect=yes])
+if test "x$with_jdk_auto_detect" = "xyes"; then
+  `javac $JAVACFLAGS -classpath $CUR_DIR/wrapper/org/GNOME/Accessibility $CUR_DIR/JavaInfo.java`
+  JDK_SRC=`java JavaInfo`
+  JAVA_HOME=`java JavaInfo`/jre
+else
+  if test -z "$JDK_SRC"; then
+    AC_MSG_ERROR("You should specify JDK_SRC")
+  fi
+fi
+
+AC_SUBST(JDK_SRC)
+AC_SUBST(JAVA_HOME)
 
 if test -z "$JAVA_HOME"; then
   JAVA_PATH=${PATH}
@@ -100,33 +121,22 @@ if test -z "$JAR"; then
 fi
 AC_SUBST(JAR)
 
-AC_ARG_WITH([jdk_auto_detect],
-            [AS_HELP_STRING([--with-jdk-auto-detect],
-            [Auto-detection of jdk location])],
-            [],
-            [with_jdk_auto_detect=yes])
-
-CUR_DIR=`pwd`
-SRC_DIR=`dirname $0`
-
-if test "x$with_jdk_auto_detect" = "xyes"; then
-  `$JAVAC $JAVACFLAGS -classpath $CUR_DIR/wrapper/org/GNOME/Accessibility $CUR_DIR/JavaInfo.java`
-  JDK_SRC=`$JAVA JavaInfo`
-  JAVA_HOME=`$JAVA JavaInfo`/jre
-else
-  if test -z "$JDK_SRC"; then
-    AC_MSG_ERROR("You should specify JDK_SRC")
-  fi
-fi
-AC_SUBST(JDK_SRC)
-AC_SUBST(JAVA_HOME)
 
 if test "x$GCC" = xyes; then
-  JAW_CFLAGS=$JAW_CFLAGS $CFLAGS -I$JDK_SRC/include
+  JAW_CFLAGS=$JAW_CFLAGS $CFLAGS
 else
   AC_MSG_ERROR("You should compile with GCC")
 fi
 AC_SUBST(JAW_CFLAGS)
+
+GNOME_COMPILE_WARNINGS([error])
+case "$WARN_CFLAGS" in
+    *-Werror*)
+        WARN_CFLAGS="$WARN_CFLAGS -Wno-error=deprecated-declarations"
+        ;;
+esac
+AM_CFLAGS="$AM_CFLAGS $WARN_CFLAGS"
+AC_SUBST(AM_CFLAGS)
 
 CHECK_JNI
 
@@ -158,7 +168,7 @@ if test -z "$XPROP"; then
 fi
 AC_SUBST(XPROP)
 
-AC_OUTPUT([
+AC_CONFIG_FILES([
     Makefile
     jni/Makefile
     jni/src/Makefile
@@ -167,6 +177,7 @@ AC_OUTPUT([
     wrapper/org/GNOME/Makefile
     wrapper/org/GNOME/Accessibility/Makefile
 ])
+AC_OUTPUT
 
 echo "
 Build configuration:
@@ -174,5 +185,8 @@ Build configuration:
        Prefix:                                 ${prefix}
        Source code location:                   ${srcdir}
        Compiler:                               ${CC}
-       JDK src                                 ${JDK_SRC}
+       JDK src:                                ${JDK_SRC}
+       Host OS:                                ${host_os}
+       JNI includes:                           ${JNI_INCLUDES}
+       Warn flags:                             ${WARN_CFLAGS}
 "

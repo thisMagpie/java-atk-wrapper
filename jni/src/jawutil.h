@@ -25,9 +25,6 @@
 
 G_BEGIN_DECLS
 
-JavaVM *globalJvm;
-JNIEnv *globalEnv;
-
 #define INTERFACE_ACTION                  0x00000001
 #define INTERFACE_COMPONENT               0x00000002
 #define INTERFACE_DOCUMENT                0x00000004
@@ -38,8 +35,9 @@ JNIEnv *globalEnv;
 #define INTERFACE_SELECTION               0x00000080
 #define INTERFACE_STREAMABLE_CONTENT      0x00000100
 #define INTERFACE_TABLE                   0x00000200
-#define INTERFACE_TEXT                    0x00000400
-#define INTERFACE_VALUE                   0x00000800
+#define INTERFACE_TABLE_CELL              0x00000400
+#define INTERFACE_TEXT                    0x00000800
+#define INTERFACE_VALUE                   0x00001000
 
 #define JAW_TYPE_UTIL               (jaw_util_get_type())
 #define JAW_UTIL(obj)               (G_TYPE_CHECK_INSTANCE_CAST ((obj), JAW_TYPE_UTIL, JawUtil))
